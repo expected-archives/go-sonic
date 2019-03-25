@@ -10,9 +10,13 @@ import (
 	"strings"
 )
 
-var ClosedError = errors.New("sonic connection is closed")
+var (
+	ClosedError       = errors.New("sonic connection is closed")
+	InvalidChanName   = errors.New("invalid channel name")
+	InvalidActionName = errors.New("invalid action name")
+)
 
-type Connection struct {
+type Driver struct {
 	Host     string
 	Port     int
 	Password string
@@ -23,9 +27,20 @@ type Connection struct {
 	closed bool
 }
 
-func (c *Connection) Connect() error {
+func NewControl(host string, port int, password string) (*Driver, error) {
+	driver := &Driver{
+		Host:     host,
+		Port:     port,
+		Password: password,
+		Channel:  Ingest,
+	}
+
+	return driver, driver.connect()
+}
+
+func (c *Driver) connect() error {
 	if !IsChannelValid(c.Channel) {
-		return errors.New("invalid channel name")
+		return InvalidChanName
 	}
 
 	conn, err := net.Dial("tcp", fmt.Sprintf("%s:%d", c.Host, c.Port))
@@ -49,7 +64,7 @@ func (c *Connection) Connect() error {
 	}
 }
 
-func (c *Connection) read() (string, error) {
+func (c *Driver) read() (string, error) {
 	if c.closed {
 		return "", ClosedError
 	}
@@ -75,7 +90,7 @@ func (c *Connection) read() (string, error) {
 	return str, nil
 }
 
-func (c Connection) write(str string) error {
+func (c Driver) write(str string) error {
 	if c.closed {
 		return ClosedError
 	}
@@ -83,34 +98,50 @@ func (c Connection) write(str string) error {
 	return err
 }
 
-func (c *Connection) Quit() error {
+func (c *Driver) Quit() error {
 	err := c.write("QUIT")
 	if err != nil {
 		return err
 	}
+
 	// should get ENDED
 	_, err = c.read()
 	c.clean()
 	return err
 }
 
-func (c *Connection) Ping() error {
+func (c Driver) Ping() error {
 	err := c.write("PING")
 	if err != nil {
-		fmt.Println("err write")
 		return err
 	}
 
 	// should get PONG
 	_, err = c.read()
 	if err != nil {
-		fmt.Println("err read")
 		return err
 	}
 	return nil
 }
 
-func (c *Connection) clean() {
+func (c Driver) Trigger(action Action) error {
+	if IsActionValid(action) {
+		return InvalidActionName
+	}
+	err := c.write(fmt.Sprintf("TRIGGER %s", action))
+	if err != nil {
+		return err
+	}
+
+	// should get OK
+	_, err = c.read()
+	if err != nil {
+		return err
+	}
+	return nil
+}
+
+func (c *Driver) clean() {
 	c.closed = true
 	_ = c.conn.Close()
 	c.conn = nil

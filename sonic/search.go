@@ -18,7 +18,23 @@ const (
 )
 
 type SearchChannel struct {
-	*Connection
+	*Driver
+}
+
+func NewSearch(host string, port int, password string) (Searchable, error) {
+	driver := &Driver{
+		Host:     host,
+		Port:     port,
+		Password: password,
+		Channel:  Search,
+	}
+	err := driver.connect()
+	if err != nil {
+		return nil, err
+	}
+	return SearchChannel{
+		Driver: driver,
+	}, nil
 }
 
 func (s SearchChannel) Query(collection, bucket, term string, limit, offset int) (results []string, err error) {

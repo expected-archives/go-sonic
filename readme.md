@@ -1,3 +1,14 @@
+## Go client for the sonic search backend
+
+This package implement all commands to work with sonic. If there is one missing, open an issue ! :)
+
+### Install
+
+`go get github.com/expectedsh/go-sonic`
+
+### Example
+
+```go
 package main
 
 import (
@@ -28,3 +39,4 @@ func main() {
 
 	fmt.Println(results)
 }
+```

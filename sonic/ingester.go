@@ -28,7 +28,23 @@ const (
 )
 
 type IngesterChannel struct {
-	*Connection
+	*Driver
+}
+
+func NewIngester(host string, port int, password string) (Ingestable, error) {
+	driver := &Driver{
+		Host:     host,
+		Port:     port,
+		Password: password,
+		Channel:  Ingest,
+	}
+	err := driver.connect()
+	if err != nil {
+		return nil, err
+	}
+	return IngesterChannel{
+		Driver: driver,
+	}, nil
 }
 
 func (i IngesterChannel) Push(collection, bucket, object, text string) (err error) {
