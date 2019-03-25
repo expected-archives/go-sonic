@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"github.com/expectedsh/go-sonic/sonic"
+	"time"
 )
 
 func main() {
@@ -20,6 +21,10 @@ func main() {
 
 	channel := sonic.IngesterChannel{Connection: connection}
 	c, e := channel.Count("test", "default", "captain")
+	fmt.Println("waiting")
+	time.Sleep(time.Second * 10)
+	e = channel.Ping()
+	//c, e = channel.Count("test", "default", "captain")
 
 	fmt.Println(c, e)
 }

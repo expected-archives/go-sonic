@@ -85,13 +85,43 @@ func buildCountQuery(bucket, object string) string {
 }
 
 func (i IngesterChannel) FlushCollection(collection string) (err error) {
-	panic("implement me")
+	err = i.write(fmt.Sprintf("%s %s", flushc, collection))
+	if err != nil {
+		return err
+	}
+
+	// sonic should sent OK
+	_, err = i.read()
+	if err != nil {
+		return err
+	}
+	return nil
 }
 
 func (i IngesterChannel) FlushBucket(collection, bucket string) (err error) {
-	panic("implement me")
+	err = i.write(fmt.Sprintf("%s %s %s", flushb, collection, bucket))
+	if err != nil {
+		return err
+	}
+
+	// sonic should sent OK
+	_, err = i.read()
+	if err != nil {
+		return err
+	}
+	return nil
 }
 
 func (i IngesterChannel) FlushObject(collection, bucket, object string) (err error) {
-	panic("implement me")
+	err = i.write(fmt.Sprintf("%s %s %s %s", flusho, collection, bucket, object))
+	if err != nil {
+		return err
+	}
+
+	// sonic should sent OK
+	_, err = i.read()
+	if err != nil {
+		return err
+	}
+	return nil
 }
