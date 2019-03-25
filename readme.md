@@ -2,6 +2,8 @@
 
 This package implement all commands to work with sonic. If there is one missing, open an issue ! :)
 
+Sonic: https://github.com/valeriansaliou/sonic
+
 ### Install
 
 `go get github.com/expectedsh/go-sonic`
