@@ -19,6 +19,7 @@ func main() {
 	}
 
 	channel := sonic.IngesterChannel{Connection: connection}
-	e = channel.Push("test", "default", "captain", "lol is truth")
-	fmt.Println(e)
+	c, e := channel.Count("test", "default", "captain")
+
+	fmt.Println(c, e)
 }
