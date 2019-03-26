@@ -1,3 +1,5 @@
+[![GoDoc](https://godoc.org/github.com/expectedsh/go-sonic/sonic?status.svg)](https://godoc.org/github.com/expectedsh/go-sonic/sonic)
+
 ## Go client for the sonic search backend
 
 This package implement all commands to work with sonic. If there is one missing, open an issue ! :)
@@ -7,10 +9,6 @@ Sonic: https://github.com/valeriansaliou/sonic
 ### Install
 
 `go get github.com/expectedsh/go-sonic`
-
-### Documentation
-
-Documentation can be found here: https://godoc.org/github.com/expectedsh/go-sonic/sonic
 
 ### Example
 
