@@ -8,6 +8,10 @@ Sonic: https://github.com/valeriansaliou/sonic
 
 `go get github.com/expectedsh/go-sonic`
 
+### Documentation
+
+Documentation can be found here: https://godoc.org/github.com/expectedsh/go-sonic/sonic
+
 ### Example
 
 ```go
