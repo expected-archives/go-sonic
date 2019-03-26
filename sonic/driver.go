@@ -49,22 +49,23 @@ func (c *Driver) Connect() error {
 	conn, err := net.Dial("tcp", fmt.Sprintf("%s:%d", c.Host, c.Port))
 	if err != nil {
 		return err
-	} else {
-		c.conn = conn
-		c.reader = bufio.NewReader(c.conn)
+	} 
+	
+	c.closed = false
+	c.conn = conn
+	c.reader = bufio.NewReader(c.conn)
 
-		err := c.write(fmt.Sprintf("START %s %s", c.channel, c.Password))
-		if err != nil {
-			return err
-		}
-
-		_, err = c.read()
-		_, err = c.read()
-		if err != nil {
-			return err
-		}
-		return nil
+	err = c.write(fmt.Sprintf("START %s %s", c.channel, c.Password))
+	if err != nil {
+		return err
 	}
+
+	_, err = c.read()
+	_, err = c.read()
+	if err != nil {
+		return err
+	}
+	return nil
 }
 
 func (c *Driver) Quit() error {
@@ -128,8 +129,10 @@ func (c Driver) write(str string) error {
 }
 
 func (c *Driver) clean() {
+	if c.conn != nil {
+		_ = c.conn.Close()
+		c.conn = nil
+	}
 	c.closed = true
-	_ = c.conn.Close()
-	c.conn = nil
 	c.reader = nil
 }
