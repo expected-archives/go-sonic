@@ -5,9 +5,23 @@ import (
 	"strings"
 )
 
+// Searchable is used for querying the search index.
 type Searchable interface {
-	Query(collection, bucket, term string, limit, offset int) (results []string, err error)
+
+	// Query the database, return a list of object, represented as a string.
+	// Sonic default limit is 10.
+	// Command syntax QUERY <collection> <bucket> "<terms>" [LIMIT(<count>)]? [OFFSET(<count>)]?.
+	Query(collection, bucket, terms string, limit, offset int) (results []string, err error)
+
+	// Suggest auto-completes word, return a list of words as a string.
+	// Command syntax SUGGEST <collection> <bucket> "<word>" [LIMIT(<count>)]?.
 	Suggest(collection, bucket, word string, limit int) (results []string, err error)
+
+	// Quit refer to the Base interface
+	Quit() (err error)
+
+	// Quit refer to the Base interface
+	Ping() (err error)
 }
 
 type searchCommands string
@@ -26,9 +40,9 @@ func NewSearch(host string, port int, password string) (Searchable, error) {
 		Host:     host,
 		Port:     port,
 		Password: password,
-		Channel:  Search,
+		channel:  Search,
 	}
-	err := driver.connect()
+	err := driver.Connect()
 	if err != nil {
 		return nil, err
 	}

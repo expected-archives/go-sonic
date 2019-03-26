@@ -6,14 +6,38 @@ import (
 	"strings"
 )
 
+// Ingestable is used for altering the search index (push, pop and flush).
 type Ingestable interface {
+	// Push search data in the index.
+	// Command syntax PUSH <collection> <bucket> <object> "<text>"
 	Push(collection, bucket, object, text string) (err error)
+
+	// Pop search data from the index.
+	// Command syntax POP <collection> <bucket> <object> "<text>".
 	Pop(collection, bucket, object, text string) (err error)
+
+	// Count indexed search data.
+	// bucket and object are optionals, empty string ignore it.
+	// Command syntax COUNT <collection> [<bucket> [<object>]?]?.
 	Count(collection, bucket, object string) (count int, err error)
 
+	// FlushCollection Flush all indexed data from a collection.
+	// Command syntax FLUSHC <collection>.
 	FlushCollection(collection string) (err error)
+
+	// Flush all indexed data from a bucket in a collection.
+	// Command syntax FLUSHB <collection> <bucket>.
 	FlushBucket(collection, bucket string) (err error)
+
+	// Flush all indexed data from an object in a bucket in collection.
+	// Command syntax FLUSHO <collection> <bucket> <object>.
 	FlushObject(collection, bucket, object string) (err error)
+
+	// Quit refer to the Base interface
+	Quit() (err error)
+
+	// Quit refer to the Base interface
+	Ping() (err error)
 }
 
 type ingesterCommands string
@@ -36,9 +60,9 @@ func NewIngester(host string, port int, password string) (Ingestable, error) {
 		Host:     host,
 		Port:     port,
 		Password: password,
-		Channel:  Ingest,
+		channel:  Ingest,
 	}
-	err := driver.connect()
+	err := driver.Connect()
 	if err != nil {
 		return nil, err
 	}
