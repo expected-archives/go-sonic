@@ -14,10 +14,12 @@ func main() {
 
 	// I will ignore all errors for demonstration purposes
 
-	_ = ingester.Push("movies", "general", "id:6ab56b4kk3", "Star wars")
-	_ = ingester.Push("movies", "general", "id:5hg67f8dg5", "Spider man")
-	_ = ingester.Push("movies", "general", "id:1m2n3b4vf6", "Batman")
-	_ = ingester.Push("movies", "general", "id:68d96h5h9d0", "This is another movie")
+	_ = ingester.BulkPush("movies", "general", []sonic.IngestBulkRecord{
+		{"id:6ab56b4kk3", "Star wars"},
+		{"id:5hg67f8dg5", "Spider man"},
+		{"id:1m2n3b4vf6", "Batman"},
+		{"id:68d96h5h9d0", "This is another movie"},
+	})
 
 	search, err := sonic.NewSearch("localhost", 1491, "SecretPassword")
 	if err != nil {

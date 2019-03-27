@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
-	"sync"
 )
 
 type IngestBulkRecord struct {
@@ -26,7 +25,7 @@ type Ingestable interface {
 	// dispatch the records at best.
 	// If parallelRoutines <= 0; parallelRoutines will be equal to 1.
 	// If parallelRoutines > len(records); parallelRoutines will be equal to len(records).
-	BulkPush(collection, bucket string, parallelRoutines int, records []IngestBulkRecord) []IngestBulkError
+	BulkPush(collection, bucket string, records []IngestBulkRecord) []IngestBulkError
 
 	// Pop search data from the index.
 	// Command syntax POP <collection> <bucket> <object> "<text>".
@@ -36,7 +35,7 @@ type Ingestable interface {
 	// dispatch the records at best.
 	// If parallelRoutines <= 0; parallelRoutines will be equal to 1.
 	// If parallelRoutines > len(records); parallelRoutines will be equal to len(records).
-	BulkPop(collection, bucket string, parallelRoutines int, records []IngestBulkRecord) []IngestBulkError
+	BulkPop(collection, bucket string, records []IngestBulkRecord) []IngestBulkError
 
 	// Count indexed search data.
 	// bucket and object are optionals, empty string ignore it.
@@ -107,32 +106,15 @@ func (i IngesterChannel) Push(collection, bucket, object, text string) (err erro
 	return nil
 }
 
-func (i IngesterChannel) BulkPush(collection, bucket string, parallelRoutines int, records []IngestBulkRecord) []IngestBulkError {
-	if parallelRoutines <= 0 {
-		parallelRoutines = 1
-	}
-
+func (i IngesterChannel) BulkPush(collection, bucket string, records []IngestBulkRecord) []IngestBulkError {
 	errs := make([]IngestBulkError, 0)
-	mutex := sync.Mutex{}
 
-	// chunk array into N (parallelRoutines) parts
-	divided := i.divideIngestBulkRecords(records, parallelRoutines)
-
-	// dispatch each records array into N goroutines
-	group := sync.WaitGroup{}
-	group.Add(len(divided))
-	for _, r := range divided {
-		go func(recs []IngestBulkRecord) {
-			for _, rec := range recs {
-				if err := i.Push(collection, bucket, rec.Object, rec.Text); err != nil {
-					mutex.Lock()
-					errs = append(errs, IngestBulkError{rec.Object, err})
-					mutex.Unlock()
-				}
-			}
-			group.Done()
-		}(r)
+	for _, v := range records {
+		if err := i.Push(collection, bucket, v.Object, v.Text); err != nil {
+			errs = append(errs, IngestBulkError{v.Object, err})
+		}
 	}
+
 	return errs
 }
 
@@ -150,32 +132,15 @@ func (i IngesterChannel) Pop(collection, bucket, object, text string) (err error
 	return nil
 }
 
-func (i IngesterChannel) BulkPop(collection, bucket string, parallelRoutines int, records []IngestBulkRecord) []IngestBulkError {
-	if parallelRoutines <= 0 {
-		parallelRoutines = 1
-	}
-
+func (i IngesterChannel) BulkPop(collection, bucket string, records []IngestBulkRecord) []IngestBulkError {
 	errs := make([]IngestBulkError, 0)
-	mutex := sync.Mutex{}
 
-	// chunk array into N (parallelRoutines) parts
-	divided := i.divideIngestBulkRecords(records, parallelRoutines)
-
-	// dispatch each records array into N goroutines
-	group := sync.WaitGroup{}
-	group.Add(len(divided))
-	for _, r := range divided {
-		go func(recs []IngestBulkRecord) {
-			for _, rec := range recs {
-				if err := i.Pop(collection, bucket, rec.Object, rec.Text); err != nil {
-					mutex.Lock()
-					errs = append(errs, IngestBulkError{rec.Object, err})
-					mutex.Unlock()
-				}
-			}
-			group.Done()
-		}(r)
+	for _, v := range records {
+		if err := i.Push(collection, bucket, v.Object, v.Text); err != nil {
+			errs = append(errs, IngestBulkError{v.Object, err})
+		}
 	}
+
 	return errs
 }
 
