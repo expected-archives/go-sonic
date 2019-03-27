@@ -11,8 +11,8 @@ import (
 )
 
 var (
-	ClosedError     = errors.New("sonic connection is closed")
-	InvalidChanName = errors.New("invalid channel name")
+	ErrClosed   = errors.New("sonic connection is closed")
+	ErrChanName = errors.New("invalid channel name")
 )
 
 // Base contains commons commands to all channels.
@@ -42,15 +42,15 @@ type Driver struct {
 // Connect open a connection via TCP with the sonic server.
 func (c *Driver) Connect() error {
 	if !IsChannelValid(c.channel) {
-		return InvalidChanName
+		return ErrChanName
 	}
 
 	c.clean()
 	conn, err := net.Dial("tcp", fmt.Sprintf("%s:%d", c.Host, c.Port))
 	if err != nil {
 		return err
-	} 
-	
+	}
+
 	c.closed = false
 	c.conn = conn
 	c.reader = bufio.NewReader(c.conn)
@@ -96,7 +96,7 @@ func (c Driver) Ping() error {
 
 func (c *Driver) read() (string, error) {
 	if c.closed {
-		return "", ClosedError
+		return "", ErrClosed
 	}
 	buffer := bytes.Buffer{}
 	for {
@@ -122,7 +122,7 @@ func (c *Driver) read() (string, error) {
 
 func (c Driver) write(str string) error {
 	if c.closed {
-		return ClosedError
+		return ErrClosed
 	}
 	_, err := c.conn.Write([]byte(str + "\r\n"))
 	return err

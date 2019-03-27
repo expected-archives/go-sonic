@@ -4,7 +4,17 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
+	"sync"
 )
+
+type IngestBulkRecord struct {
+	Object, Text string
+}
+
+type IngestBulkError struct {
+	Object string
+	Error  error
+}
 
 // Ingestable is used for altering the search index (push, pop and flush).
 type Ingestable interface {
@@ -12,9 +22,21 @@ type Ingestable interface {
 	// Command syntax PUSH <collection> <bucket> <object> "<text>"
 	Push(collection, bucket, object, text string) (err error)
 
+	// BulkPush will execute N (parallelRoutines) goroutines at the same time to
+	// dispatch the records at best.
+	// If parallelRoutines <= 0; parallelRoutines will be equal to 1.
+	// If parallelRoutines > len(records); parallelRoutines will be equal to len(records).
+	BulkPush(collection, bucket string, parallelRoutines int, records []IngestBulkRecord) []IngestBulkError
+
 	// Pop search data from the index.
 	// Command syntax POP <collection> <bucket> <object> "<text>".
 	Pop(collection, bucket, object, text string) (err error)
+
+	// BulkPop will execute N (parallelRoutines) goroutines at the same time to
+	// dispatch the records at best.
+	// If parallelRoutines <= 0; parallelRoutines will be equal to 1.
+	// If parallelRoutines > len(records); parallelRoutines will be equal to len(records).
+	BulkPop(collection, bucket string, parallelRoutines int, records []IngestBulkRecord) []IngestBulkError
 
 	// Count indexed search data.
 	// bucket and object are optionals, empty string ignore it.
@@ -85,6 +107,35 @@ func (i IngesterChannel) Push(collection, bucket, object, text string) (err erro
 	return nil
 }
 
+func (i IngesterChannel) BulkPush(collection, bucket string, parallelRoutines int, records []IngestBulkRecord) []IngestBulkError {
+	if parallelRoutines <= 0 {
+		parallelRoutines = 1
+	}
+
+	errs := make([]IngestBulkError, 0)
+	mutex := sync.Mutex{}
+
+	// chunk array into N (parallelRoutines) parts
+	divided := i.divideIngestBulkRecords(records, parallelRoutines)
+
+	// dispatch each records array into N goroutines
+	group := sync.WaitGroup{}
+	group.Add(len(divided))
+	for _, r := range divided {
+		go func(recs []IngestBulkRecord) {
+			for _, rec := range recs {
+				if err := i.Push(collection, bucket, rec.Object, rec.Text); err != nil {
+					mutex.Lock()
+					errs = append(errs, IngestBulkError{rec.Object, err})
+					mutex.Unlock()
+				}
+			}
+			group.Done()
+		}(r)
+	}
+	return errs
+}
+
 func (i IngesterChannel) Pop(collection, bucket, object, text string) (err error) {
 	err = i.write(fmt.Sprintf("%s %s %s %s \"%s\"", pop, collection, bucket, object, text))
 	if err != nil {
@@ -97,6 +148,35 @@ func (i IngesterChannel) Pop(collection, bucket, object, text string) (err error
 		return err
 	}
 	return nil
+}
+
+func (i IngesterChannel) BulkPop(collection, bucket string, parallelRoutines int, records []IngestBulkRecord) []IngestBulkError {
+	if parallelRoutines <= 0 {
+		parallelRoutines = 1
+	}
+
+	errs := make([]IngestBulkError, 0)
+	mutex := sync.Mutex{}
+
+	// chunk array into N (parallelRoutines) parts
+	divided := i.divideIngestBulkRecords(records, parallelRoutines)
+
+	// dispatch each records array into N goroutines
+	group := sync.WaitGroup{}
+	group.Add(len(divided))
+	for _, r := range divided {
+		go func(recs []IngestBulkRecord) {
+			for _, rec := range recs {
+				if err := i.Pop(collection, bucket, rec.Object, rec.Text); err != nil {
+					mutex.Lock()
+					errs = append(errs, IngestBulkError{rec.Object, err})
+					mutex.Unlock()
+				}
+			}
+			group.Done()
+		}(r)
+	}
+	return errs
 }
 
 func (i IngesterChannel) Count(collection, bucket, object string) (cnt int, err error) {
@@ -164,4 +244,17 @@ func (i IngesterChannel) FlushObject(collection, bucket, object string) (err err
 		return err
 	}
 	return nil
+}
+
+func (i IngesterChannel) divideIngestBulkRecords(records []IngestBulkRecord, parallelRoutines int) [][]IngestBulkRecord {
+	var divided [][]IngestBulkRecord
+	chunkSize := (len(records) + parallelRoutines - 1) / parallelRoutines
+	for i := 0; i < len(records); i += chunkSize {
+		end := i + chunkSize
+		if end > len(records) {
+			end = len(records)
+		}
+		divided = append(divided, records[i:end])
+	}
+	return divided
 }

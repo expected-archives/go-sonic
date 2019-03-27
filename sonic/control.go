@@ -5,7 +5,7 @@ import (
 	"fmt"
 )
 
-var InvalidActionName = errors.New("invalid action name")
+var ErrActionName = errors.New("invalid action name")
 
 // Controllable  is used for administration purposes.
 type Controllable interface {
@@ -42,7 +42,7 @@ func NewControl(host string, port int, password string) (Controllable, error) {
 
 func (c ControlChannel) Trigger(action Action) (err error) {
 	if IsActionValid(action) {
-		return InvalidActionName
+		return ErrActionName
 	}
 	err = c.write(fmt.Sprintf("TRIGGER %s", action))
 	if err != nil {
