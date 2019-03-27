@@ -45,3 +45,21 @@ func main() {
 	fmt.Println(results)
 }
 ```
+
+### Benchmark bulk
+
+Method BulkPush and BulkPop use custom connection pool with goroutine dispatch algorithm.
+This is the benchmark (file sonic/ingester_test.go):
+
+```
+goos: linux
+goarch: amd64
+pkg: github.com/expectedsh/go-sonic/sonic
+BenchmarkIngesterChannel_BulkPushMaxCPUs-8   	       2	 662657959 ns/op
+BenchmarkIngesterChannel_BulkPush10-8        	       2	 603779977 ns/op
+BenchmarkIngesterChannel_Push-8              	       1	1023322864 ns/op
+PASS
+```
+
+Bulk push is faster than for loop on Push. 
+Hardware detail: Intel(R) Core(TM) i7-8550U CPU @ 1.80GHz
