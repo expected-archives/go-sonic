@@ -7,10 +7,12 @@ import (
 	"sync"
 )
 
+// IngestBulkRecord is the struct to be used as a list in bulk operation.
 type IngestBulkRecord struct {
 	Object, Text string
 }
 
+// IngestBulkError represent an error for a given object in a bulk operation.
 type IngestBulkError struct {
 	Object string
 	Error  error

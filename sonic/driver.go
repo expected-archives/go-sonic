@@ -5,7 +5,12 @@ import (
 )
 
 var (
-	ErrClosed   = errors.New("sonic connection is closed")
+	// ErrClosed is throw when an error with the sonic server
+	// come from the state of the connection.
+	ErrClosed = errors.New("sonic connection is closed")
+
+	// ErrChanName is throw when the channel name is not supported
+	// by sonic server.
 	ErrChanName = errors.New("invalid channel name")
 )
 

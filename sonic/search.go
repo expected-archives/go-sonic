@@ -35,7 +35,7 @@ type searchChannel struct {
 	*driver
 }
 
-// NewIngester create a new driver instance with a searchChannel instance.
+// NewSearch create a new driver instance with a searchChannel instance.
 // Only way to get a Searchable implementation.
 func NewSearch(host string, port int, password string) (Searchable, error) {
 	driver := &driver{
