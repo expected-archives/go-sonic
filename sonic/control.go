@@ -5,6 +5,7 @@ import (
 	"fmt"
 )
 
+// ErrActionName is throw when the action is invalid.
 var ErrActionName = errors.New("invalid action name")
 
 // Controllable  is used for administration purposes.
@@ -16,16 +17,19 @@ type Controllable interface {
 	// Quit refer to the Base interface
 	Quit() (err error)
 
-	// Quit refer to the Base interface
+	// Ping refer to the Base interface
 	Ping() (err error)
 }
 
-type ControlChannel struct {
-	*Driver
+// controlChannel is used for administration purposes.
+type controlChannel struct {
+	*driver
 }
 
+// NewControl create a new driver instance with a controlChannel instance.
+// Only way to get a Controllable implementation.
 func NewControl(host string, port int, password string) (Controllable, error) {
-	driver := &Driver{
+	driver := &driver{
 		Host:     host,
 		Port:     port,
 		Password: password,
@@ -35,12 +39,12 @@ func NewControl(host string, port int, password string) (Controllable, error) {
 	if err != nil {
 		return nil, err
 	}
-	return ControlChannel{
-		Driver: driver,
+	return controlChannel{
+		driver: driver,
 	}, nil
 }
 
-func (c ControlChannel) Trigger(action Action) (err error) {
+func (c controlChannel) Trigger(action Action) (err error) {
 	if IsActionValid(action) {
 		return ErrActionName
 	}

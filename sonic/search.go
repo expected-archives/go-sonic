@@ -20,7 +20,7 @@ type Searchable interface {
 	// Quit refer to the Base interface
 	Quit() (err error)
 
-	// Quit refer to the Base interface
+	// Ping refer to the Base interface
 	Ping() (err error)
 }
 
@@ -31,12 +31,14 @@ const (
 	suggest searchCommands = "SUGGEST"
 )
 
-type SearchChannel struct {
-	*Driver
+type searchChannel struct {
+	*driver
 }
 
+// NewIngester create a new driver instance with a searchChannel instance.
+// Only way to get a Searchable implementation.
 func NewSearch(host string, port int, password string) (Searchable, error) {
-	driver := &Driver{
+	driver := &driver{
 		Host:     host,
 		Port:     port,
 		Password: password,
@@ -46,12 +48,12 @@ func NewSearch(host string, port int, password string) (Searchable, error) {
 	if err != nil {
 		return nil, err
 	}
-	return SearchChannel{
-		Driver: driver,
+	return searchChannel{
+		driver: driver,
 	}, nil
 }
 
-func (s SearchChannel) Query(collection, bucket, term string, limit, offset int) (results []string, err error) {
+func (s searchChannel) Query(collection, bucket, term string, limit, offset int) (results []string, err error) {
 	err = s.write(fmt.Sprintf("%s %s %s \"%s\" LIMIT(%d) OFFSET(%d)", query, collection, bucket, term, limit, offset))
 	if err != nil {
 		return nil, err
@@ -71,7 +73,7 @@ func (s SearchChannel) Query(collection, bucket, term string, limit, offset int)
 	return getSearchResults(read, string(query)), nil
 }
 
-func (s SearchChannel) Suggest(collection, bucket, word string, limit int) (results []string, err error) {
+func (s searchChannel) Suggest(collection, bucket, word string, limit int) (results []string, err error) {
 	err = s.write(fmt.Sprintf("%s %s %s \"%s\" LIMIT(%d)", suggest, collection, bucket, word, limit))
 	if err != nil {
 		return nil, err

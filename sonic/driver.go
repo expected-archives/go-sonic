@@ -1,13 +1,7 @@
 package sonic
 
 import (
-	"bufio"
-	"bytes"
 	"errors"
-	"fmt"
-	"io"
-	"net"
-	"strings"
 )
 
 var (
@@ -28,47 +22,27 @@ type Base interface {
 	Ping() error
 }
 
-type Driver struct {
+type driver struct {
 	Host     string
 	Port     int
 	Password string
 
 	channel Channel
-	reader  *bufio.Reader
-	conn    net.Conn
-	closed  bool
+	*connection
 }
 
 // Connect open a connection via TCP with the sonic server.
-func (c *Driver) Connect() error {
+func (c *driver) Connect() error {
 	if !IsChannelValid(c.channel) {
 		return ErrChanName
 	}
 
-	c.clean()
-	conn, err := net.Dial("tcp", fmt.Sprintf("%s:%d", c.Host, c.Port))
-	if err != nil {
-		return err
-	}
-
-	c.closed = false
-	c.conn = conn
-	c.reader = bufio.NewReader(c.conn)
-
-	err = c.write(fmt.Sprintf("START %s %s", c.channel, c.Password))
-	if err != nil {
-		return err
-	}
-
-	_, err = c.read()
-	_, err = c.read()
-	if err != nil {
-		return err
-	}
-	return nil
+	var err error
+	c.connection, err = newConnection(c)
+	return err
 }
 
-func (c *Driver) Quit() error {
+func (c *driver) Quit() error {
 	err := c.write("QUIT")
 	if err != nil {
 		return err
@@ -76,11 +50,11 @@ func (c *Driver) Quit() error {
 
 	// should get ENDED
 	_, err = c.read()
-	c.clean()
+	c.close()
 	return err
 }
 
-func (c Driver) Ping() error {
+func (c driver) Ping() error {
 	err := c.write("PING")
 	if err != nil {
 		return err
@@ -92,47 +66,4 @@ func (c Driver) Ping() error {
 		return err
 	}
 	return nil
-}
-
-func (c *Driver) read() (string, error) {
-	if c.closed {
-		return "", ErrClosed
-	}
-	buffer := bytes.Buffer{}
-	for {
-		line, isPrefix, err := c.reader.ReadLine()
-		buffer.Write(line)
-		if err != nil {
-			if err == io.EOF {
-				c.clean()
-			}
-			return "", err
-		}
-		if !isPrefix {
-			break
-		}
-	}
-
-	str := buffer.String()
-	if strings.HasPrefix(str, "ERR ") {
-		return "", errors.New(str[4:])
-	}
-	return str, nil
-}
-
-func (c Driver) write(str string) error {
-	if c.closed {
-		return ErrClosed
-	}
-	_, err := c.conn.Write([]byte(str + "\r\n"))
-	return err
-}
-
-func (c *Driver) clean() {
-	if c.conn != nil {
-		_ = c.conn.Close()
-		c.conn = nil
-	}
-	c.closed = true
-	c.reader = nil
 }

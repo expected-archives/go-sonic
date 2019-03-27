@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
+	"sync"
 )
 
 type IngestBulkRecord struct {
@@ -25,7 +26,7 @@ type Ingestable interface {
 	// dispatch the records at best.
 	// If parallelRoutines <= 0; parallelRoutines will be equal to 1.
 	// If parallelRoutines > len(records); parallelRoutines will be equal to len(records).
-	BulkPush(collection, bucket string, records []IngestBulkRecord) []IngestBulkError
+	BulkPush(collection, bucket string, parallelRoutines int, records []IngestBulkRecord) ([]IngestBulkError, error)
 
 	// Pop search data from the index.
 	// Command syntax POP <collection> <bucket> <object> "<text>".
@@ -35,7 +36,7 @@ type Ingestable interface {
 	// dispatch the records at best.
 	// If parallelRoutines <= 0; parallelRoutines will be equal to 1.
 	// If parallelRoutines > len(records); parallelRoutines will be equal to len(records).
-	BulkPop(collection, bucket string, records []IngestBulkRecord) []IngestBulkError
+	BulkPop(collection, bucket string, parallelRoutines int, records []IngestBulkRecord) ([]IngestBulkError, error)
 
 	// Count indexed search data.
 	// bucket and object are optionals, empty string ignore it.
@@ -57,7 +58,7 @@ type Ingestable interface {
 	// Quit refer to the Base interface
 	Quit() (err error)
 
-	// Quit refer to the Base interface
+	// Ping refer to the Base interface
 	Ping() (err error)
 }
 
@@ -72,12 +73,14 @@ const (
 	flusho ingesterCommands = "FLUSHO"
 )
 
-type IngesterChannel struct {
-	*Driver
+type ingesterChannel struct {
+	*driver
 }
 
+// NewIngester create a new driver instance with a ingesterChannel instance.
+// Only way to get a Ingestable implementation.
 func NewIngester(host string, port int, password string) (Ingestable, error) {
-	driver := &Driver{
+	driver := &driver{
 		Host:     host,
 		Port:     port,
 		Password: password,
@@ -87,12 +90,12 @@ func NewIngester(host string, port int, password string) (Ingestable, error) {
 	if err != nil {
 		return nil, err
 	}
-	return IngesterChannel{
-		Driver: driver,
+	return ingesterChannel{
+		driver: driver,
 	}, nil
 }
 
-func (i IngesterChannel) Push(collection, bucket, object, text string) (err error) {
+func (i ingesterChannel) Push(collection, bucket, object, text string) (err error) {
 	err = i.write(fmt.Sprintf("%s %s %s %s \"%s\"", push, collection, bucket, object, text))
 	if err != nil {
 		return err
@@ -106,19 +109,55 @@ func (i IngesterChannel) Push(collection, bucket, object, text string) (err erro
 	return nil
 }
 
-func (i IngesterChannel) BulkPush(collection, bucket string, records []IngestBulkRecord) []IngestBulkError {
-	errs := make([]IngestBulkError, 0)
-
-	for _, v := range records {
-		if err := i.Push(collection, bucket, v.Object, v.Text); err != nil {
-			errs = append(errs, IngestBulkError{v.Object, err})
-		}
+func (i ingesterChannel) BulkPush(collection, bucket string, parallelRoutines int, records []IngestBulkRecord) (errs []IngestBulkError, err error) {
+	if parallelRoutines <= 0 {
+		parallelRoutines = 1
 	}
 
-	return errs
+	err = nil
+	errs = make([]IngestBulkError, 0)
+	errMutex := sync.Mutex{}
+
+	// chunk array into N (parallelRoutines) parts
+	divided := i.divideIngestBulkRecords(records, parallelRoutines)
+
+	// dispatch each records array into N goroutines
+	group := sync.WaitGroup{}
+	group.Add(len(divided))
+	for _, r := range divided {
+		go func(recs []IngestBulkRecord) {
+			var conn *connection
+
+			errMutex.Lock()
+			conn, err = newConnection(i.driver)
+			errMutex.Unlock()
+
+			for _, rec := range recs {
+				err := conn.write(fmt.Sprintf("%s %s %s %s \"%s\"", push, collection, bucket, rec.Object, rec.Text))
+				if err != nil {
+					errMutex.Lock()
+					errs = append(errs, IngestBulkError{rec.Object, err})
+					errMutex.Unlock()
+					continue
+				}
+
+				// sonic should sent OK
+				_, err = conn.read()
+				if err != nil {
+					errMutex.Lock()
+					errs = append(errs, IngestBulkError{rec.Object, err})
+					errMutex.Unlock()
+				}
+			}
+			conn.close()
+			group.Done()
+		}(r)
+	}
+	group.Wait()
+	return errs, err
 }
 
-func (i IngesterChannel) Pop(collection, bucket, object, text string) (err error) {
+func (i ingesterChannel) Pop(collection, bucket, object, text string) (err error) {
 	err = i.write(fmt.Sprintf("%s %s %s %s \"%s\"", pop, collection, bucket, object, text))
 	if err != nil {
 		return err
@@ -132,19 +171,55 @@ func (i IngesterChannel) Pop(collection, bucket, object, text string) (err error
 	return nil
 }
 
-func (i IngesterChannel) BulkPop(collection, bucket string, records []IngestBulkRecord) []IngestBulkError {
-	errs := make([]IngestBulkError, 0)
-
-	for _, v := range records {
-		if err := i.Push(collection, bucket, v.Object, v.Text); err != nil {
-			errs = append(errs, IngestBulkError{v.Object, err})
-		}
+func (i ingesterChannel) BulkPop(collection, bucket string, parallelRoutines int, records []IngestBulkRecord) (errs []IngestBulkError, err error) {
+	if parallelRoutines <= 0 {
+		parallelRoutines = 1
 	}
 
-	return errs
+	err = nil
+	errs = make([]IngestBulkError, 0)
+	errMutex := sync.Mutex{}
+
+	// chunk array into N (parallelRoutines) parts
+	divided := i.divideIngestBulkRecords(records, parallelRoutines)
+
+	// dispatch each records array into N goroutines
+	group := sync.WaitGroup{}
+	group.Add(len(divided))
+	for _, r := range divided {
+		go func(recs []IngestBulkRecord) {
+			var conn *connection
+
+			errMutex.Lock()
+			conn, err = newConnection(i.driver)
+			errMutex.Unlock()
+
+			for _, rec := range recs {
+				err := conn.write(fmt.Sprintf("%s %s %s %s \"%s\"", push, collection, bucket, rec.Object, rec.Text))
+				if err != nil {
+					errMutex.Lock()
+					errs = append(errs, IngestBulkError{rec.Object, err})
+					errMutex.Unlock()
+					continue
+				}
+
+				// sonic should sent OK
+				_, err = conn.read()
+				if err != nil {
+					errMutex.Lock()
+					errs = append(errs, IngestBulkError{rec.Object, err})
+					errMutex.Unlock()
+				}
+			}
+			conn.close()
+			group.Done()
+		}(r)
+	}
+	group.Wait()
+	return errs, err
 }
 
-func (i IngesterChannel) Count(collection, bucket, object string) (cnt int, err error) {
+func (i ingesterChannel) Count(collection, bucket, object string) (cnt int, err error) {
 	err = i.write(fmt.Sprintf("%s %s %s", count, collection, buildCountQuery(bucket, object)))
 	if err != nil {
 		return 0, err
@@ -169,7 +244,7 @@ func buildCountQuery(bucket, object string) string {
 	return builder.String()
 }
 
-func (i IngesterChannel) FlushCollection(collection string) (err error) {
+func (i ingesterChannel) FlushCollection(collection string) (err error) {
 	err = i.write(fmt.Sprintf("%s %s", flushc, collection))
 	if err != nil {
 		return err
@@ -183,7 +258,7 @@ func (i IngesterChannel) FlushCollection(collection string) (err error) {
 	return nil
 }
 
-func (i IngesterChannel) FlushBucket(collection, bucket string) (err error) {
+func (i ingesterChannel) FlushBucket(collection, bucket string) (err error) {
 	err = i.write(fmt.Sprintf("%s %s %s", flushb, collection, bucket))
 	if err != nil {
 		return err
@@ -197,7 +272,7 @@ func (i IngesterChannel) FlushBucket(collection, bucket string) (err error) {
 	return nil
 }
 
-func (i IngesterChannel) FlushObject(collection, bucket, object string) (err error) {
+func (i ingesterChannel) FlushObject(collection, bucket, object string) (err error) {
 	err = i.write(fmt.Sprintf("%s %s %s %s", flusho, collection, bucket, object))
 	if err != nil {
 		return err
@@ -211,7 +286,7 @@ func (i IngesterChannel) FlushObject(collection, bucket, object string) (err err
 	return nil
 }
 
-func (i IngesterChannel) divideIngestBulkRecords(records []IngestBulkRecord, parallelRoutines int) [][]IngestBulkRecord {
+func (i ingesterChannel) divideIngestBulkRecords(records []IngestBulkRecord, parallelRoutines int) [][]IngestBulkRecord {
 	var divided [][]IngestBulkRecord
 	chunkSize := (len(records) + parallelRoutines - 1) / parallelRoutines
 	for i := 0; i < len(records); i += chunkSize {
