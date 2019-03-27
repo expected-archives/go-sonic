@@ -26,7 +26,7 @@ type Ingestable interface {
 	// dispatch the records at best.
 	// If parallelRoutines <= 0; parallelRoutines will be equal to 1.
 	// If parallelRoutines > len(records); parallelRoutines will be equal to len(records).
-	BulkPush(collection, bucket string, parallelRoutines int, records []IngestBulkRecord) ([]IngestBulkError, error)
+	BulkPush(collection, bucket string, parallelRoutines int, records []IngestBulkRecord) []IngestBulkError
 
 	// Pop search data from the index.
 	// Command syntax POP <collection> <bucket> <object> "<text>".
@@ -36,7 +36,7 @@ type Ingestable interface {
 	// dispatch the records at best.
 	// If parallelRoutines <= 0; parallelRoutines will be equal to 1.
 	// If parallelRoutines > len(records); parallelRoutines will be equal to len(records).
-	BulkPop(collection, bucket string, parallelRoutines int, records []IngestBulkRecord) ([]IngestBulkError, error)
+	BulkPop(collection, bucket string, parallelRoutines int, records []IngestBulkRecord) []IngestBulkError
 
 	// Count indexed search data.
 	// bucket and object are optionals, empty string ignore it.
@@ -61,7 +61,6 @@ type Ingestable interface {
 	// Ping refer to the Base interface
 	Ping() (err error)
 }
-
 type ingesterCommands string
 
 const (
@@ -109,44 +108,40 @@ func (i ingesterChannel) Push(collection, bucket, object, text string) (err erro
 	return nil
 }
 
-func (i ingesterChannel) BulkPush(collection, bucket string, parallelRoutines int, records []IngestBulkRecord) (errs []IngestBulkError, err error) {
+func (i ingesterChannel) BulkPush(collection, bucket string, parallelRoutines int, records []IngestBulkRecord) (errs []IngestBulkError) {
 	if parallelRoutines <= 0 {
 		parallelRoutines = 1
 	}
 
-	err = nil
 	errs = make([]IngestBulkError, 0)
 	errMutex := sync.Mutex{}
 
 	// chunk array into N (parallelRoutines) parts
-	divided := i.divideIngestBulkRecords(records, parallelRoutines)
+	divided := divideIngestBulkRecords(records, parallelRoutines)
 
 	// dispatch each records array into N goroutines
 	group := sync.WaitGroup{}
 	group.Add(len(divided))
 	for _, r := range divided {
 		go func(recs []IngestBulkRecord) {
-			var conn *connection
-
-			errMutex.Lock()
-			conn, err = newConnection(i.driver)
-			errMutex.Unlock()
+			conn, _ := newConnection(i.driver)
 
 			for _, rec := range recs {
-				err := conn.write(fmt.Sprintf("%s %s %s %s \"%s\"", push, collection, bucket, rec.Object, rec.Text))
+				if conn == nil {
+					addBulkError(&errs, rec, ErrClosed, errMutex)
+				}
+				err := conn.write(fmt.Sprintf(
+					"%s %s %s %s \"%s\"",
+					push, collection, bucket, rec.Object, rec.Text),
+				)
 				if err != nil {
-					errMutex.Lock()
-					errs = append(errs, IngestBulkError{rec.Object, err})
-					errMutex.Unlock()
+					addBulkError(&errs, rec, err, errMutex)
 					continue
 				}
-
 				// sonic should sent OK
 				_, err = conn.read()
 				if err != nil {
-					errMutex.Lock()
-					errs = append(errs, IngestBulkError{rec.Object, err})
-					errMutex.Unlock()
+					addBulkError(&errs, rec, err, errMutex)
 				}
 			}
 			conn.close()
@@ -154,7 +149,7 @@ func (i ingesterChannel) BulkPush(collection, bucket string, parallelRoutines in
 		}(r)
 	}
 	group.Wait()
-	return errs, err
+	return errs
 }
 
 func (i ingesterChannel) Pop(collection, bucket, object, text string) (err error) {
@@ -171,44 +166,40 @@ func (i ingesterChannel) Pop(collection, bucket, object, text string) (err error
 	return nil
 }
 
-func (i ingesterChannel) BulkPop(collection, bucket string, parallelRoutines int, records []IngestBulkRecord) (errs []IngestBulkError, err error) {
+func (i ingesterChannel) BulkPop(collection, bucket string, parallelRoutines int, records []IngestBulkRecord) (errs []IngestBulkError) {
 	if parallelRoutines <= 0 {
 		parallelRoutines = 1
 	}
 
-	err = nil
 	errs = make([]IngestBulkError, 0)
 	errMutex := sync.Mutex{}
 
 	// chunk array into N (parallelRoutines) parts
-	divided := i.divideIngestBulkRecords(records, parallelRoutines)
+	divided := divideIngestBulkRecords(records, parallelRoutines)
 
 	// dispatch each records array into N goroutines
 	group := sync.WaitGroup{}
 	group.Add(len(divided))
 	for _, r := range divided {
 		go func(recs []IngestBulkRecord) {
-			var conn *connection
-
-			errMutex.Lock()
-			conn, err = newConnection(i.driver)
-			errMutex.Unlock()
+			conn, _ := newConnection(i.driver)
 
 			for _, rec := range recs {
-				err := conn.write(fmt.Sprintf("%s %s %s %s \"%s\"", push, collection, bucket, rec.Object, rec.Text))
+				if conn == nil {
+					addBulkError(&errs, rec, ErrClosed, errMutex)
+				}
+				err := conn.write(fmt.Sprintf(
+					"%s %s %s %s \"%s\"",
+					pop, collection, bucket, rec.Object, rec.Text),
+				)
 				if err != nil {
-					errMutex.Lock()
-					errs = append(errs, IngestBulkError{rec.Object, err})
-					errMutex.Unlock()
+					addBulkError(&errs, rec, err, errMutex)
 					continue
 				}
-
 				// sonic should sent OK
 				_, err = conn.read()
 				if err != nil {
-					errMutex.Lock()
-					errs = append(errs, IngestBulkError{rec.Object, err})
-					errMutex.Unlock()
+					addBulkError(&errs, rec, err, errMutex)
 				}
 			}
 			conn.close()
@@ -216,7 +207,7 @@ func (i ingesterChannel) BulkPop(collection, bucket string, parallelRoutines int
 		}(r)
 	}
 	group.Wait()
-	return errs, err
+	return errs
 }
 
 func (i ingesterChannel) Count(collection, bucket, object string) (cnt int, err error) {
@@ -286,7 +277,7 @@ func (i ingesterChannel) FlushObject(collection, bucket, object string) (err err
 	return nil
 }
 
-func (i ingesterChannel) divideIngestBulkRecords(records []IngestBulkRecord, parallelRoutines int) [][]IngestBulkRecord {
+func divideIngestBulkRecords(records []IngestBulkRecord, parallelRoutines int) [][]IngestBulkRecord {
 	var divided [][]IngestBulkRecord
 	chunkSize := (len(records) + parallelRoutines - 1) / parallelRoutines
 	for i := 0; i < len(records); i += chunkSize {
@@ -297,4 +288,10 @@ func (i ingesterChannel) divideIngestBulkRecords(records []IngestBulkRecord, par
 		divided = append(divided, records[i:end])
 	}
 	return divided
+}
+
+func addBulkError(e *[]IngestBulkError, record IngestBulkRecord, err error, mutex sync.Mutex) {
+	mutex.Lock()
+	defer mutex.Unlock()
+	*e = append(*e, IngestBulkError{record.Object, err})
 }
