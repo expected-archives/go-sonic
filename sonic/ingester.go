@@ -98,6 +98,16 @@ func NewIngester(host string, port int, password string) (Ingestable, error) {
 }
 
 func (i ingesterChannel) Push(collection, bucket, object, text string) (err error) {
+	//
+	patterns := []struct {
+		Pattern string
+		Replacement     string
+	}{{"\\", "\\\\"},
+		{"\n", "\\n"},
+		{"\"",  "\\\""}}
+	for _, v := range patterns {
+		text = strings.Replace(text, v.Pattern, v.Replacement, -1)
+	}
 
 	chunks := splitText(text, i.cmdMaxBytes/2)
 	// split chunks with partial success will yield single error
