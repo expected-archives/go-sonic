@@ -5,6 +5,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"unicode/utf8"
 )
 
 // IngestBulkRecord is the struct to be used as a list in bulk operation.
@@ -97,17 +98,55 @@ func NewIngester(host string, port int, password string) (Ingestable, error) {
 }
 
 func (i ingesterChannel) Push(collection, bucket, object, text string) (err error) {
-	err = i.write(fmt.Sprintf("%s %s %s %s \"%s\"", push, collection, bucket, object, text))
-	if err != nil {
-		return err
+	//
+	patterns := []struct {
+		Pattern string
+		Replacement     string
+	}{{"\\", "\\\\"},
+		{"\n", "\\n"},
+		{"\"",  "\\\""}}
+	for _, v := range patterns {
+		text = strings.Replace(text, v.Pattern, v.Replacement, -1)
 	}
 
-	// sonic should sent OK
-	_, err = i.read()
-	if err != nil {
-		return err
+	chunks := splitText(text, i.cmdMaxBytes/2)
+	// split chunks with partial success will yield single error
+	for _, chunk := range chunks {
+		err = i.write(fmt.Sprintf("%s %s %s %s \"%s\"", push, collection, bucket, object, chunk))
+
+		if err != nil {
+			return err
+		}
+
+		// sonic should sent OK
+		_, err = i.read()
+		if err != nil {
+			return err
+		}
 	}
+
 	return nil
+}
+
+// Ensure splitting on a valid leading byte
+// Slicing the string directly is more efficient than converting to []byte and back because
+// since a string is immutable and a []byte isn't,
+// the data must be copied to new memory upon conversion,
+// taking O(n) time (both ways!),
+// whereas slicing a string simply returns a new string header backed by the same array as the original
+// (taking constant time).
+func splitText(longString string, maxLen int) []string {
+	splits := []string{}
+
+	var l, r int
+	for l, r = 0, maxLen; r < len(longString); l, r = r, r+maxLen {
+		for !utf8.RuneStart(longString[r]) {
+			r--
+		}
+		splits = append(splits, longString[l:r])
+	}
+	splits = append(splits, longString[l:])
+	return splits
 }
 
 func (i ingesterChannel) BulkPush(collection, bucket string, parallelRoutines int, records []IngestBulkRecord) (errs []IngestBulkError) {
@@ -116,7 +155,7 @@ func (i ingesterChannel) BulkPush(collection, bucket string, parallelRoutines in
 	}
 
 	errs = make([]IngestBulkError, 0)
-	errMutex := sync.Mutex{}
+	errMutex := &sync.Mutex{}
 
 	// chunk array into N (parallelRoutines) parts
 	divided := divideIngestBulkRecords(records, parallelRoutines)
@@ -132,10 +171,7 @@ func (i ingesterChannel) BulkPush(collection, bucket string, parallelRoutines in
 				if conn == nil {
 					addBulkError(&errs, rec, ErrClosed, errMutex)
 				}
-				err := conn.write(fmt.Sprintf(
-					"%s %s %s %s \"%s\"",
-					push, collection, bucket, rec.Object, rec.Text),
-				)
+				err := i.Push(collection, bucket, rec.Object, rec.Text)
 				if err != nil {
 					addBulkError(&errs, rec, err, errMutex)
 					continue
@@ -174,7 +210,7 @@ func (i ingesterChannel) BulkPop(collection, bucket string, parallelRoutines int
 	}
 
 	errs = make([]IngestBulkError, 0)
-	errMutex := sync.Mutex{}
+	errMutex := &sync.Mutex{}
 
 	// chunk array into N (parallelRoutines) parts
 	divided := divideIngestBulkRecords(records, parallelRoutines)
@@ -292,7 +328,7 @@ func divideIngestBulkRecords(records []IngestBulkRecord, parallelRoutines int) [
 	return divided
 }
 
-func addBulkError(e *[]IngestBulkError, record IngestBulkRecord, err error, mutex sync.Mutex) {
+func addBulkError(e *[]IngestBulkError, record IngestBulkRecord, err error, mutex *sync.Mutex) {
 	mutex.Lock()
 	defer mutex.Unlock()
 	*e = append(*e, IngestBulkError{record.Object, err})

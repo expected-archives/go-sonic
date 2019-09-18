@@ -7,12 +7,15 @@ import (
 	"fmt"
 	"io"
 	"net"
+	"strconv"
 	"strings"
+	"unicode"
 )
 
 type connection struct {
 	reader *bufio.Reader
 	conn   net.Conn
+	cmdMaxBytes int
 	closed bool
 }
 
@@ -62,6 +65,20 @@ func (c *connection) read() (string, error) {
 	str := buffer.String()
 	if strings.HasPrefix(str, "ERR ") {
 		return "", errors.New(str[4:])
+	}
+	if strings.HasPrefix(str, "STARTED ") {
+
+		ss := strings.FieldsFunc(str, func(r rune) bool {
+			if unicode.IsSpace(r) || r == '(' || r == ')' {
+				return true
+			}
+			return false
+		})
+		bufferSize, err := strconv.Atoi(ss[len(ss)-1])
+		if err != nil {
+			return "", errors.New(fmt.Sprintf("Unable to parse STARTED response: %s", str))
+		}
+		c.cmdMaxBytes = bufferSize
 	}
 	return str, nil
 }
