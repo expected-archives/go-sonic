@@ -78,10 +78,11 @@ import (
 func main() {
 	events := make(chan []string, 1)
 
-	// simulating a high incoming message load
+	event := []string{"some_text", "some_id"}
 	tryCrash := func() {
 		for {
-			events <- []string{"some_text", "some_id"}
+			// replace "event" with whatever is giving you events: pubsub, amqp messages…
+			events <- event
 		}
 	}
 
