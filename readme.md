@@ -62,5 +62,44 @@ BenchmarkIngesterChannel_Push-8              	       1	1023322864 ns/op
 PASS
 ```
 
+### Thread Safety
+
+The driver itself isn't thread safe. You could use locks or channels to avoid crashes.
+
+```go
+package main
+
+import (
+	"fmt"
+
+	"github.com/expectedsh/go-sonic/sonic"
+)
+
+func main() {
+	events := make(chan []string, 1)
+
+	event := []string{"some_text", "some_id"}
+	tryCrash := func() {
+		for {
+			// replace "event" with whatever is giving you events: pubsub, amqp messages…
+			events <- event
+		}
+	}
+
+	go tryCrash()
+	go tryCrash()
+	go tryCrash()
+	go tryCrash()
+
+	ingester, _ := sonic.NewIngester("localhost", 1491, "SecretPassword")
+
+	for {
+		msg := <-events
+		// Or use some buffering along with BulkPush
+		ingester.Push("collection", "bucket", msg[1], msg[0])
+	}
+}
+```
+
 Bulk push is faster than for loop on Push. 
 Hardware detail: Intel(R) Core(TM) i7-8550U CPU @ 1.80GHz
