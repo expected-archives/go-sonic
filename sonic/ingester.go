@@ -100,11 +100,11 @@ func NewIngester(host string, port int, password string) (Ingestable, error) {
 func (i ingesterChannel) Push(collection, bucket, object, text string) (err error) {
 	//
 	patterns := []struct {
-		Pattern string
-		Replacement     string
+		Pattern     string
+		Replacement string
 	}{{"\\", "\\\\"},
 		{"\n", "\\n"},
-		{"\"",  "\\\""}}
+		{"\"", "\\\""}}
 	for _, v := range patterns {
 		text = strings.Replace(text, v.Pattern, v.Replacement, -1)
 	}
@@ -175,11 +175,6 @@ func (i ingesterChannel) BulkPush(collection, bucket string, parallelRoutines in
 				if err != nil {
 					addBulkError(&errs, rec, err, errMutex)
 					continue
-				}
-				// sonic should sent OK
-				_, err = conn.read()
-				if err != nil {
-					addBulkError(&errs, rec, err, errMutex)
 				}
 			}
 			conn.close()
