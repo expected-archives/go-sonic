@@ -1,3 +1,3 @@
-module github.com/expectedsh/go-sonic
+module github.com/BenSlabbert/go-sonic
 
 go 1.13
