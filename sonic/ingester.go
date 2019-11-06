@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
-	"sync"
 	"unicode/utf8"
 )
 
@@ -154,35 +153,53 @@ func (i ingesterChannel) BulkPush(collection, bucket string, parallelRoutines in
 		parallelRoutines = 1
 	}
 
-	errs = make([]IngestBulkError, 0)
-	errMutex := &sync.Mutex{}
-
 	// chunk array into N (parallelRoutines) parts
 	divided := divideIngestBulkRecords(records, parallelRoutines)
 
-	// dispatch each records array into N goroutines
-	group := sync.WaitGroup{}
-	group.Add(len(divided))
-	for _, r := range divided {
-		go func(recs []IngestBulkRecord) {
-			conn, _ := newConnection(i.driver)
+	bulkWriteChan := make(chan []IngestBulkRecord, len(divided))
+	bulkErrorChan := make(chan []IngestBulkError)
 
-			for _, rec := range recs {
-				if conn == nil {
-					addBulkError(&errs, rec, ErrClosed, errMutex)
-				}
-				err := i.Push(collection, bucket, rec.Object, rec.Text)
-				if err != nil {
-					addBulkError(&errs, rec, err, errMutex)
-					continue
-				}
-			}
-			conn.close()
-			group.Done()
-		}(r)
+	defer close(bulkWriteChan)
+	defer close(bulkErrorChan)
+
+	for _, r := range divided {
+		bulkWriteChan <- r
+		go bulkPushRoutine(i.driver, collection, bucket, bulkWriteChan, bulkErrorChan)
 	}
-	group.Wait()
+
+	errs = make([]IngestBulkError, 0)
+	for range divided {
+		for _, e := range <-bulkErrorChan {
+			errs = append(errs, e)
+		}
+	}
+
 	return errs
+}
+
+// bulkPushRoutine creates a new ingester instance using the provided driver
+// and pushes all the records received from bulkWriteChan
+// any errors are sent to bulkErrorChan
+func bulkPushRoutine(driver *driver, collection, bucket string, bulkWriteChan <-chan []IngestBulkRecord, bulkErrorChan chan<- []IngestBulkError) {
+	recs := <-bulkWriteChan
+	errs := make([]IngestBulkError, 0)
+	newIngester, _ := NewIngester(driver.Host, driver.Port, driver.Password)
+
+	for _, rec := range recs {
+		if newIngester == nil {
+			addBulkError(&errs, rec, ErrClosed)
+			continue
+		}
+		err := newIngester.Push(collection, bucket, rec.Object, rec.Text)
+		if err != nil {
+			addBulkError(&errs, rec, err)
+		}
+	}
+
+	if newIngester != nil {
+		_ = newIngester.Quit()
+	}
+	bulkErrorChan <- errs
 }
 
 func (i ingesterChannel) Pop(collection, bucket, object, text string) (err error) {
@@ -204,43 +221,58 @@ func (i ingesterChannel) BulkPop(collection, bucket string, parallelRoutines int
 		parallelRoutines = 1
 	}
 
-	errs = make([]IngestBulkError, 0)
-	errMutex := &sync.Mutex{}
-
 	// chunk array into N (parallelRoutines) parts
 	divided := divideIngestBulkRecords(records, parallelRoutines)
 
-	// dispatch each records array into N goroutines
-	group := sync.WaitGroup{}
-	group.Add(len(divided))
-	for _, r := range divided {
-		go func(recs []IngestBulkRecord) {
-			conn, _ := newConnection(i.driver)
+	bulkPopChan := make(chan []IngestBulkRecord, len(divided))
+	bulkErrorChan := make(chan []IngestBulkError)
 
-			for _, rec := range recs {
-				if conn == nil {
-					addBulkError(&errs, rec, ErrClosed, errMutex)
-				}
-				err := conn.write(fmt.Sprintf(
-					"%s %s %s %s \"%s\"",
-					pop, collection, bucket, rec.Object, rec.Text),
-				)
-				if err != nil {
-					addBulkError(&errs, rec, err, errMutex)
-					continue
-				}
-				// sonic should sent OK
-				_, err = conn.read()
-				if err != nil {
-					addBulkError(&errs, rec, err, errMutex)
-				}
-			}
-			conn.close()
-			group.Done()
-		}(r)
+	defer close(bulkPopChan)
+	defer close(bulkErrorChan)
+
+	for _, r := range divided {
+		bulkPopChan <- r
+		go bulkPopRoutine(i.driver, collection, bucket, bulkPopChan, bulkErrorChan)
 	}
-	group.Wait()
+
+	errs = make([]IngestBulkError, 0)
+	for range divided {
+		for _, e := range <-bulkErrorChan {
+			errs = append(errs, e)
+		}
+	}
+
+	close(bulkPopChan)
+	close(bulkErrorChan)
 	return errs
+}
+
+// bulkPopRoutine creates a new ingester instance using the provided driver
+// and pops all the records received from bulkPopChan
+// any errors are sent to bulkErrorChan
+func bulkPopRoutine(driver *driver, collection, bucket string, bulkPopChan <-chan []IngestBulkRecord, bulkErrorChan chan<- []IngestBulkError) {
+	recs := <-bulkPopChan
+	errs := make([]IngestBulkError, 0)
+	newIngester, _ := NewIngester(driver.Host, driver.Port, driver.Password)
+
+	for _, rec := range recs {
+		if newIngester == nil {
+			addBulkError(&errs, rec, ErrClosed)
+			continue
+		}
+
+		err := newIngester.Pop(collection, bucket, rec.Object, rec.Text)
+
+		if err != nil {
+			addBulkError(&errs, rec, err)
+		}
+	}
+
+	if newIngester != nil {
+		_ = newIngester.Quit()
+	}
+
+	bulkErrorChan <- errs
 }
 
 func (i ingesterChannel) Count(collection, bucket, object string) (cnt int, err error) {
@@ -323,8 +355,6 @@ func divideIngestBulkRecords(records []IngestBulkRecord, parallelRoutines int) [
 	return divided
 }
 
-func addBulkError(e *[]IngestBulkError, record IngestBulkRecord, err error, mutex *sync.Mutex) {
-	mutex.Lock()
-	defer mutex.Unlock()
+func addBulkError(e *[]IngestBulkError, record IngestBulkRecord, err error) {
 	*e = append(*e, IngestBulkError{record.Object, err})
 }
