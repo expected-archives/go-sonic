@@ -10,6 +10,27 @@ import (
 var records = make([]IngestBulkRecord, 0)
 var ingester, err = NewIngester("localhost", 1491, "SecretPassword")
 
+func BenchmarkIngesterChannel_BulkPush2XMaxCPUs(b *testing.B) {
+	if err != nil {
+		return
+	}
+
+	cpus := 2 * runtime.NumCPU()
+
+	for n := 0; n < b.N; n++ {
+		e := ingester.FlushBucket("test", "test2XMaxCpus")
+		if e != nil {
+			b.Log(e)
+			b.Fail()
+		}
+		be := ingester.BulkPush("test", "test2XMaxCpus", cpus, records)
+		if len(be) > 0 {
+			b.Log(be, e)
+			b.Fail()
+		}
+	}
+}
+
 func BenchmarkIngesterChannel_BulkPushMaxCPUs(b *testing.B) {
 	if err != nil {
 		return
@@ -43,6 +64,25 @@ func BenchmarkIngesterChannel_BulkPush10(b *testing.B) {
 			b.Fail()
 		}
 		be := ingester.BulkPush("test", "test10", 10, records)
+		if len(be) > 0 {
+			b.Log(be, err)
+			b.Fail()
+		}
+	}
+}
+
+func BenchmarkIngesterChannel_BulkPop10(b *testing.B) {
+	if err != nil {
+		return
+	}
+
+	for n := 0; n < b.N; n++ {
+		e := ingester.FlushBucket("test", "popTest10")
+		if e != nil {
+			b.Log(e)
+			b.Fail()
+		}
+		be := ingester.BulkPop("test", "popTest10", 10, records)
 		if len(be) > 0 {
 			b.Log(be, err)
 			b.Fail()
