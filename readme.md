@@ -62,6 +62,9 @@ BenchmarkIngesterChannel_Push-8              	       1	1023322864 ns/op
 PASS
 ```
 
+Bulk push is faster than for loop on Push. 
+Hardware detail: Intel(R) Core(TM) i7-8550U CPU @ 1.80GHz
+
 ### Thread Safety
 
 The driver itself isn't thread safe. You could use locks or channels to avoid crashes.
@@ -100,6 +103,3 @@ func main() {
 	}
 }
 ```
-
-Bulk push is faster than for loop on Push. 
-Hardware detail: Intel(R) Core(TM) i7-8550U CPU @ 1.80GHz
