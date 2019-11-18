@@ -13,10 +13,10 @@ import (
 )
 
 type connection struct {
-	reader *bufio.Reader
-	conn   net.Conn
+	reader      *bufio.Reader
+	conn        net.Conn
 	cmdMaxBytes int
-	closed bool
+	closed      bool
 }
 
 func newConnection(d *driver) (*connection, error) {
