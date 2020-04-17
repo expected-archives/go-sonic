@@ -50,6 +50,7 @@ func (c *driver) Connect() error {
 func (c *driver) Quit() error {
 	err := c.write("QUIT")
 	if err != nil {
+		c.close()
 		return err
 	}
 
