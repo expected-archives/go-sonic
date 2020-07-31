@@ -6,7 +6,6 @@ import (
 )
 
 func main() {
-
 	ingester, err := sonic.NewIngester("localhost", 1491, "SecretPassword")
 	if err != nil {
 		panic(err)
