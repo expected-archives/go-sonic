@@ -2,6 +2,8 @@ package sonic
 
 import (
 	"fmt"
+	"github.com/expectedsh/go-sonic/internal/backoff"
+	"io"
 	"strings"
 )
 
@@ -54,6 +56,18 @@ func NewSearch(host string, port int, password string) (Searchable, error) {
 }
 
 func (s searchChannel) Query(collection, bucket, term string, limit, offset int) (results []string, err error) {
+	defer func() {
+		if err == io.EOF {
+			err = backoff.New("reopen connection", func() error {
+				return s.connection.open()
+			}).Run()
+			if err != nil {
+				return
+			}
+			results, err = s.Query(collection, bucket, term, limit, offset)
+		}
+	}()
+
 	err = s.write(fmt.Sprintf("%s %s %s \"%s\" LIMIT(%d) OFFSET(%d)", query, collection, bucket, term, limit, offset))
 	if err != nil {
 		return nil, err

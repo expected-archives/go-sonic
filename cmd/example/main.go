@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"github.com/expectedsh/go-sonic/sonic"
+	"time"
 )
 
 func main() {
@@ -25,7 +26,9 @@ func main() {
 		panic(err)
 	}
 
-	results, _ := search.Query("movies", "general", "man", 10, 0)
-
-	fmt.Println(results)
+	for {
+		results, err := search.Query("movies", "general", "man", 10, 0)
+		fmt.Println(results, err)
+		time.Sleep(time.Second * 5)
+	}
 }
