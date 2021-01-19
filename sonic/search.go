@@ -10,8 +10,8 @@ type Searchable interface {
 
 	// Query the database, return a list of object, represented as a string.
 	// Sonic default limit is 10.
-	// Command syntax QUERY <collection> <bucket> "<terms>" [LIMIT(<count>)]? [OFFSET(<count>)]?.
-	Query(collection, bucket, terms string, limit, offset int) (results []string, err error)
+	// Command syntax QUERY <collection> <bucket> "<terms>" [LIMIT(<count>)]? [OFFSET(<count>)]? [LANG(<locale>)]?.
+	Query(collection, bucket, terms string, limit, offset int, lang Lang) (results []string, err error)
 
 	// Suggest auto-completes word, return a list of words as a string.
 	// Command syntax SUGGEST <collection> <bucket> "<word>" [LIMIT(<count>)]?.
@@ -53,8 +53,8 @@ func NewSearch(host string, port int, password string) (Searchable, error) {
 	}, nil
 }
 
-func (s searchChannel) Query(collection, bucket, term string, limit, offset int) (results []string, err error) {
-	err = s.write(fmt.Sprintf("%s %s %s \"%s\" LIMIT(%d) OFFSET(%d)", query, collection, bucket, term, limit, offset))
+func (s searchChannel) Query(collection, bucket, term string, limit, offset int, lang Lang) (results []string, err error) {
+	err = s.write(fmt.Sprintf("%s %s %s \"%s\" LIMIT(%d) OFFSET(%d)"+langFormat(lang), query, collection, bucket, term, limit, offset, lang))
 	if err != nil {
 		return nil, err
 	}

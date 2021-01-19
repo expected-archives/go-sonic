@@ -21,14 +21,14 @@ type IngestBulkError struct {
 // Ingestable is used for altering the search index (push, pop and flush).
 type Ingestable interface {
 	// Push search data in the index.
-	// Command syntax PUSH <collection> <bucket> <object> "<text>"
-	Push(collection, bucket, object, text string) (err error)
+	// Command syntax PUSH <collection> <bucket> <object> "<text>" [LANG(<locale>)]?
+	Push(collection, bucket, object, text string, lang Lang) (err error)
 
 	// BulkPush will execute N (parallelRoutines) goroutines at the same time to
 	// dispatch the records at best.
 	// If parallelRoutines <= 0; parallelRoutines will be equal to 1.
 	// If parallelRoutines > len(records); parallelRoutines will be equal to len(records).
-	BulkPush(collection, bucket string, parallelRoutines int, records []IngestBulkRecord) []IngestBulkError
+	BulkPush(collection, bucket string, parallelRoutines int, records []IngestBulkRecord, lang Lang) []IngestBulkError
 
 	// Pop search data from the index.
 	// Command syntax POP <collection> <bucket> <object> "<text>".
@@ -96,7 +96,7 @@ func NewIngester(host string, port int, password string) (Ingestable, error) {
 	}, nil
 }
 
-func (i ingesterChannel) Push(collection, bucket, object, text string) (err error) {
+func (i ingesterChannel) Push(collection, bucket, object, text string, lang Lang) (err error) {
 	//
 	patterns := []struct {
 		Pattern     string
@@ -111,7 +111,8 @@ func (i ingesterChannel) Push(collection, bucket, object, text string) (err erro
 	chunks := splitText(text, i.cmdMaxBytes/2)
 	// split chunks with partial success will yield single error
 	for _, chunk := range chunks {
-		err = i.write(fmt.Sprintf("%s %s %s %s \"%s\"", push, collection, bucket, object, chunk))
+		ff := fmt.Sprintf("%s %s %s %s \"%s\""+langFormat(lang), push, collection, bucket, object, chunk, lang)
+		err = i.write(ff)
 
 		if err != nil {
 			return err
@@ -125,6 +126,13 @@ func (i ingesterChannel) Push(collection, bucket, object, text string) (err erro
 	}
 
 	return nil
+}
+
+func langFormat(lang Lang) string {
+	if lang != "" {
+		return " LANG(%s)"
+	}
+	return "%s"
 }
 
 // Ensure splitting on a valid leading byte
@@ -148,7 +156,7 @@ func splitText(longString string, maxLen int) []string {
 	return splits
 }
 
-func (i ingesterChannel) BulkPush(collection, bucket string, parallelRoutines int, records []IngestBulkRecord) (errs []IngestBulkError) {
+func (i ingesterChannel) BulkPush(collection, bucket string, parallelRoutines int, records []IngestBulkRecord, lang Lang) (errs []IngestBulkError) {
 	if parallelRoutines <= 0 {
 		parallelRoutines = 1
 	}
@@ -170,7 +178,7 @@ func (i ingesterChannel) BulkPush(collection, bucket string, parallelRoutines in
 					addBulkError(&errs, rec, ErrClosed)
 					continue
 				}
-				err := newIngester.Push(collection, bucket, rec.Object, rec.Text)
+				err := newIngester.Push(collection, bucket, rec.Object, rec.Text, lang)
 				if err != nil {
 					addBulkError(&errs, rec, err)
 				}
