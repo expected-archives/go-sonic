@@ -45,7 +45,7 @@ func NewControl(host string, port int, password string) (Controllable, error) {
 }
 
 func (c controlChannel) Trigger(action Action) (err error) {
-	if IsActionValid(action) {
+	if !IsActionValid(action) {
 		return ErrActionName
 	}
 	err = c.write(fmt.Sprintf("TRIGGER %s", action))
