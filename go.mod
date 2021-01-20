@@ -1,3 +1,3 @@
-module github.com/expectedsh/go-sonic
+module github.com/Jonarod/go-sonic
 
 go 1.14
