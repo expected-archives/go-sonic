@@ -23,7 +23,7 @@ func BenchmarkIngesterChannel_BulkPush2XMaxCPUs(b *testing.B) {
 			b.Log(e)
 			b.Fail()
 		}
-		be := ingester.BulkPush("test", "test2XMaxCpus", cpus, records)
+		be := ingester.BulkPush("test", "test2XMaxCpus", cpus, records, LangAutoDetect)
 		if len(be) > 0 {
 			b.Log(be, e)
 			b.Fail()
@@ -44,7 +44,7 @@ func BenchmarkIngesterChannel_BulkPushMaxCPUs(b *testing.B) {
 			b.Log(e)
 			b.Fail()
 		}
-		be := ingester.BulkPush("test", "testMaxCpus", cpus, records)
+		be := ingester.BulkPush("test", "testMaxCpus", cpus, records, LangAutoDetect)
 		if len(be) > 0 {
 			b.Log(be, e)
 			b.Fail()
@@ -63,7 +63,7 @@ func BenchmarkIngesterChannel_BulkPush10(b *testing.B) {
 			b.Log(e)
 			b.Fail()
 		}
-		be := ingester.BulkPush("test", "test10", 10, records)
+		be := ingester.BulkPush("test", "test10", 10, records, LangAutoDetect)
 		if len(be) > 0 {
 			b.Log(be, err)
 			b.Fail()
@@ -102,7 +102,7 @@ func BenchmarkIngesterChannel_Push(b *testing.B) {
 			b.Fail()
 		}
 		for _, v := range records {
-			e := ingester.Push("test", "testBulk", v.Object, v.Text)
+			e := ingester.Push("test", "testBulk", v.Object, v.Text, LangAutoDetect)
 			if e != nil {
 				b.Log(e)
 				b.Fail()
