@@ -80,6 +80,9 @@ func (c *connection) read() (string, error) {
 		}
 		c.cmdMaxBytes = bufferSize
 	}
+	if strings.HasPrefix(str, "ENDED ") {
+		return "", fmt.Errorf("sonic ended connection with reason: %s", str)
+	}
 	return str, nil
 }
 
