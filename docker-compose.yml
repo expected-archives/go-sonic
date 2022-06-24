@@ -1,0 +1,42 @@
+---
+version: "3"
+
+# This file is used for testing the library.
+#
+# Running tests in docker:
+#   docker-compose run --rm test
+#
+# Running tests locally:
+#   export TEST_SONIC_ADDR="sonic://:SecretPassword@127.0.0.1:1491"
+#   docker-compose up -d sonic
+#   go test ./...
+#
+# Cleanup:
+#   docker-compose down
+
+services:
+  sonic:
+    build:
+      context: ./testdata
+    volumes:
+      - ./testdata/sonic.cfg:/etc/sonic.cfg:ro
+    ports:
+      - "127.0.0.1:1491:1491"
+    environment:
+      RUST_BACKTRACE: "full"
+    healthcheck:
+      test: nc -z 127.0.0.1 1491
+      interval: 5s
+      timeout: 3s
+      retries: 7
+
+  test:
+    image: "golang:1.18.3"
+    depends_on:
+      sonic:
+        condition: service_healthy
+    volumes:
+      - .:/app:ro
+    environment:
+      - TEST_SONIC_ADDR=sonic://:SecretPassword@sonic:1491
+    command: bash -c "cd /app && go test ./..."

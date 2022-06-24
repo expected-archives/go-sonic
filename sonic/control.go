@@ -23,24 +23,19 @@ type Controllable interface {
 
 // controlChannel is used for administration purposes.
 type controlChannel struct {
-	*driver
+	*driversHolder
 }
 
 // NewControl create a new driver instance with a controlChannel instance.
 // Only way to get a Controllable implementation.
-func NewControl(host string, port int, password string) (Controllable, error) {
-	driver := &driver{
-		Host:     host,
-		Port:     port,
-		Password: password,
-		channel:  Control,
-	}
-	err := driver.Connect()
+func NewControl(host string, port int, password string, opts ...OptionSetter) (Controllable, error) {
+	driversHolder, err := newDriversHolder(defaultOptions(host, port, password, Control).With(opts...))
 	if err != nil {
 		return nil, err
 	}
+
 	return controlChannel{
-		driver: driver,
+		driversHolder: driversHolder,
 	}, nil
 }
 
@@ -48,13 +43,20 @@ func (c controlChannel) Trigger(action Action) (err error) {
 	if !IsActionValid(action) {
 		return ErrActionName
 	}
-	err = c.write(fmt.Sprintf("TRIGGER %s", action))
+
+	d, err := c.Get()
+	if err != nil {
+		return err
+	}
+	defer d.close()
+
+	err = d.write(fmt.Sprintf("TRIGGER %s", action))
 	if err != nil {
 		return err
 	}
 
 	// should get OK
-	_, err = c.read()
+	_, err = d.read()
 	if err != nil {
 		return err
 	}
