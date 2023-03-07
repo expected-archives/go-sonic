@@ -40,7 +40,7 @@ func newDriversPool(
 
 	// Open connnections.
 	drivers := make([]*driverWrapper, 0, minIdle)
-	for i := 0; i < maxIdle; i++ {
+	for i := 0; i < minIdle; i++ {
 		dw, err = dp.Get()
 		if err != nil {
 			// We still need to close already opened connections.
