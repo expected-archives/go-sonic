@@ -32,41 +32,61 @@ const (
 )
 
 type searchChannel struct {
-	*driver
+	*driversHolder
 }
 
 // NewSearch create a new driver instance with a searchChannel instance.
 // Only way to get a Searchable implementation.
-func NewSearch(host string, port int, password string) (Searchable, error) {
-	driver := &driver{
-		Host:     host,
-		Port:     port,
-		Password: password,
-		channel:  Search,
-	}
-	err := driver.Connect()
+func NewSearch(
+	host string,
+	port int,
+	password string,
+	opts ...OptionSetter,
+) (Searchable, error) {
+	driversHolder, err := newDriversHolder(defaultOptions(
+		host,
+		port,
+		password,
+		Search,
+	).With(opts...))
 	if err != nil {
 		return nil, err
 	}
+
 	return searchChannel{
-		driver: driver,
+		driversHolder: driversHolder,
 	}, nil
 }
 
 func (s searchChannel) Query(collection, bucket, term string, limit, offset int, lang Lang) (results []string, err error) {
-	err = s.write(fmt.Sprintf("%s %s %s \"%s\" LIMIT(%d) OFFSET(%d)"+langFormat(lang), query, collection, bucket, term, limit, offset, lang))
+	d, err := s.Get()
+	if err != nil {
+		return nil, err
+	}
+	defer d.close()
+
+	err = d.write(fmt.Sprintf(
+		"%s %s %s %q LIMIT(%d) OFFSET(%d)"+langFormat(lang),
+		query,
+		collection,
+		bucket,
+		term,
+		limit,
+		offset,
+		lang,
+	))
 	if err != nil {
 		return nil, err
 	}
 
 	// pending, should be PENDING ID_EVENT
-	_, err = s.read()
+	_, err = d.read()
 	if err != nil {
 		return nil, err
 	}
 
 	// event query, should be EVENT QUERY ID_EVENT RESULT1 RESULT2 ...
-	read, err := s.read()
+	read, err := d.read()
 	if err != nil {
 		return nil, err
 	}
@@ -74,19 +94,25 @@ func (s searchChannel) Query(collection, bucket, term string, limit, offset int,
 }
 
 func (s searchChannel) Suggest(collection, bucket, word string, limit int) (results []string, err error) {
-	err = s.write(fmt.Sprintf("%s %s %s \"%s\" LIMIT(%d)", suggest, collection, bucket, word, limit))
+	d, err := s.Get()
+	if err != nil {
+		return nil, err
+	}
+	defer d.close()
+
+	err = d.write(fmt.Sprintf("%s %s %s \"%s\" LIMIT(%d)", suggest, collection, bucket, word, limit))
 	if err != nil {
 		return nil, err
 	}
 
 	// pending, should be PENDING ID_EVENT
-	_, err = s.read()
+	_, err = d.read()
 	if err != nil {
 		return nil, err
 	}
 
 	// event query, should be EVENT SUGGEST ID_EVENT RESULT1 RESULT2 ...
-	read, err := s.read()
+	read, err := d.read()
 	if err != nil {
 		return nil, err
 	}

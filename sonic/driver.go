@@ -2,6 +2,7 @@ package sonic
 
 import (
 	"errors"
+	"time"
 )
 
 var (
@@ -32,8 +33,30 @@ type driver struct {
 	Port     int
 	Password string
 
+	lastUse  time.Time
+	lastPing time.Time
+
 	channel Channel
 	*connection
+}
+
+type driverFactory struct {
+	Host     string
+	Port     int
+	Password string
+	Channel  Channel
+}
+
+func (df driverFactory) Build() *driver {
+	return &driver{
+		Host:     df.Host,
+		Port:     df.Port,
+		Password: df.Password,
+		channel:  df.Channel,
+
+		lastPing:   time.Time{},
+		connection: nil,
+	}
 }
 
 // Connect open a connection via TCP with the sonic server.
@@ -43,7 +66,11 @@ func (c *driver) Connect() error {
 	}
 
 	var err error
+
 	c.connection, err = newConnection(c)
+	c.lastPing = time.Now()
+	c.lastUse = time.Now()
+
 	return err
 }
 
@@ -60,7 +87,7 @@ func (c *driver) Quit() error {
 	return err
 }
 
-func (c driver) Ping() error {
+func (c *driver) Ping() error {
 	err := c.write("PING")
 	if err != nil {
 		return err
@@ -71,5 +98,23 @@ func (c driver) Ping() error {
 	if err != nil {
 		return err
 	}
+
+	c.lastPing = time.Now()
+
 	return nil
+}
+
+// softPing pings the connection if it wasn't pinged for a while.
+func (c *driver) checkConn(pingThreshold, maxLifetime time.Duration) (ok bool) {
+	if maxLifetime > 0 && time.Since(c.lastUse) > maxLifetime {
+		return false
+	}
+
+	c.lastUse = time.Now()
+
+	if pingThreshold > 0 && time.Since(c.lastPing) > pingThreshold {
+		return c.Ping() == nil
+	}
+
+	return true
 }

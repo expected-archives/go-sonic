@@ -75,28 +75,39 @@ const (
 )
 
 type ingesterChannel struct {
-	*driver
+	*driversHolder
 }
 
 // NewIngester create a new driver instance with a ingesterChannel instance.
 // Only way to get a Ingestable implementation.
-func NewIngester(host string, port int, password string) (Ingestable, error) {
-	driver := &driver{
-		Host:     host,
-		Port:     port,
-		Password: password,
-		channel:  Ingest,
-	}
-	err := driver.Connect()
+func NewIngester(
+	host string,
+	port int,
+	password string,
+	opts ...OptionSetter,
+) (Ingestable, error) {
+	driversHolder, err := newDriversHolder(defaultOptions(
+		host,
+		port,
+		password,
+		Ingest,
+	).With(opts...))
 	if err != nil {
 		return nil, err
 	}
+
 	return ingesterChannel{
-		driver: driver,
+		driversHolder: driversHolder,
 	}, nil
 }
 
 func (i ingesterChannel) Push(collection, bucket, object, text string, lang Lang) (err error) {
+	d, err := i.Get()
+	if err != nil {
+		return err
+	}
+	defer d.close()
+
 	//
 	patterns := []struct {
 		Pattern     string
@@ -108,18 +119,18 @@ func (i ingesterChannel) Push(collection, bucket, object, text string, lang Lang
 		text = strings.Replace(text, v.Pattern, v.Replacement, -1)
 	}
 
-	chunks := splitText(text, i.cmdMaxBytes/2)
+	chunks := splitText(text, d.cmdMaxBytes/2)
 	// split chunks with partial success will yield single error
 	for _, chunk := range chunks {
 		ff := fmt.Sprintf("%s %s %s %s \"%s\""+langFormat(lang), push, collection, bucket, object, chunk, lang)
-		err = i.write(ff)
+		err = d.write(ff)
 
 		if err != nil {
 			return err
 		}
 
 		// sonic should sent OK
-		_, err = i.read()
+		_, err = d.read()
 		if err != nil {
 			return err
 		}
@@ -169,26 +180,22 @@ func (i ingesterChannel) BulkPush(collection, bucket string, parallelRoutines in
 
 	for _, r := range divided {
 		r := r
-		go func(driver *driver, collection, bucket string, recs []IngestBulkRecord, bulkErrorChan chan<- []IngestBulkError) {
+		go func(
+			collection string,
+			bucket string,
+			recs []IngestBulkRecord,
+			bulkErrorChan chan<- []IngestBulkError,
+		) {
 			errs := make([]IngestBulkError, 0)
-			newIngester, _ := NewIngester(driver.Host, driver.Port, driver.Password)
 
 			for _, rec := range recs {
-				if newIngester == nil {
-					addBulkError(&errs, rec, ErrClosed)
-					continue
-				}
-				err := newIngester.Push(collection, bucket, rec.Object, rec.Text, lang)
+				err := i.Push(collection, bucket, rec.Object, rec.Text, lang)
 				if err != nil {
 					addBulkError(&errs, rec, err)
 				}
 			}
-
-			if newIngester != nil {
-				_ = newIngester.Quit()
-			}
 			bulkErrorChan <- errs
-		}(i.driver, collection, bucket, r, bulkErrorChan)
+		}(collection, bucket, r, bulkErrorChan)
 	}
 
 	errs = make([]IngestBulkError, 0)
@@ -200,13 +207,19 @@ func (i ingesterChannel) BulkPush(collection, bucket string, parallelRoutines in
 }
 
 func (i ingesterChannel) Pop(collection, bucket, object, text string) (err error) {
-	err = i.write(fmt.Sprintf("%s %s %s %s \"%s\"", pop, collection, bucket, object, text))
+	d, err := i.Get()
+	if err != nil {
+		return err
+	}
+	defer d.close()
+
+	err = d.write(fmt.Sprintf("%s %s %s %s \"%s\"", pop, collection, bucket, object, text))
 	if err != nil {
 		return err
 	}
 
 	// sonic should sent OK
-	_, err = i.read()
+	_, err = d.read()
 	if err != nil {
 		return err
 	}
@@ -226,29 +239,19 @@ func (i ingesterChannel) BulkPop(collection, bucket string, parallelRoutines int
 
 	for _, r := range divided {
 		r := r
-		go func(driver *driver, collection, bucket string, recs []IngestBulkRecord, bulkErrorChan chan<- []IngestBulkError) {
+		go func(collection, bucket string, recs []IngestBulkRecord, bulkErrorChan chan<- []IngestBulkError) {
 			errs := make([]IngestBulkError, 0)
-			newIngester, _ := NewIngester(driver.Host, driver.Port, driver.Password)
 
 			for _, rec := range recs {
-				if newIngester == nil {
-					addBulkError(&errs, rec, ErrClosed)
-					continue
-				}
-
-				err := newIngester.Pop(collection, bucket, rec.Object, rec.Text)
+				err := i.Pop(collection, bucket, rec.Object, rec.Text)
 
 				if err != nil {
 					addBulkError(&errs, rec, err)
 				}
 			}
 
-			if newIngester != nil {
-				_ = newIngester.Quit()
-			}
-
 			bulkErrorChan <- errs
-		}(i.driver, collection, bucket, r, bulkErrorChan)
+		}(collection, bucket, r, bulkErrorChan)
 	}
 
 	errs = make([]IngestBulkError, 0)
@@ -260,13 +263,19 @@ func (i ingesterChannel) BulkPop(collection, bucket string, parallelRoutines int
 }
 
 func (i ingesterChannel) Count(collection, bucket, object string) (cnt int, err error) {
-	err = i.write(fmt.Sprintf("%s %s %s", count, collection, buildCountQuery(bucket, object)))
+	d, err := i.Get()
+	if err != nil {
+		return 0, err
+	}
+	defer d.close()
+
+	err = d.write(fmt.Sprintf("%s %s %s", count, collection, buildCountQuery(bucket, object)))
 	if err != nil {
 		return 0, err
 	}
 
 	// RESULT NUMBER
-	r, err := i.read()
+	r, err := d.read()
 	if err != nil {
 		return 0, err
 	}
@@ -285,13 +294,19 @@ func buildCountQuery(bucket, object string) string {
 }
 
 func (i ingesterChannel) FlushCollection(collection string) (err error) {
-	err = i.write(fmt.Sprintf("%s %s", flushc, collection))
+	d, err := i.Get()
+	if err != nil {
+		return err
+	}
+	defer d.close()
+
+	err = d.write(fmt.Sprintf("%s %s", flushc, collection))
 	if err != nil {
 		return err
 	}
 
 	// sonic should sent OK
-	_, err = i.read()
+	_, err = d.read()
 	if err != nil {
 		return err
 	}
@@ -299,13 +314,19 @@ func (i ingesterChannel) FlushCollection(collection string) (err error) {
 }
 
 func (i ingesterChannel) FlushBucket(collection, bucket string) (err error) {
-	err = i.write(fmt.Sprintf("%s %s %s", flushb, collection, bucket))
+	d, err := i.Get()
+	if err != nil {
+		return err
+	}
+	defer d.close()
+
+	err = d.write(fmt.Sprintf("%s %s %s", flushb, collection, bucket))
 	if err != nil {
 		return err
 	}
 
 	// sonic should sent OK
-	_, err = i.read()
+	_, err = d.read()
 	if err != nil {
 		return err
 	}
@@ -313,13 +334,19 @@ func (i ingesterChannel) FlushBucket(collection, bucket string) (err error) {
 }
 
 func (i ingesterChannel) FlushObject(collection, bucket, object string) (err error) {
-	err = i.write(fmt.Sprintf("%s %s %s %s", flusho, collection, bucket, object))
+	d, err := i.Get()
+	if err != nil {
+		return err
+	}
+	defer d.close()
+
+	err = d.write(fmt.Sprintf("%s %s %s %s", flusho, collection, bucket, object))
 	if err != nil {
 		return err
 	}
 
 	// sonic should sent OK
-	_, err = i.read()
+	_, err = d.read()
 	if err != nil {
 		return err
 	}

@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"time"
 
 	"github.com/expectedsh/go-sonic/sonic"
 )
@@ -9,8 +10,14 @@ import (
 const pswd = "SecretPassword"
 
 func main() {
-
-	ingester, err := sonic.NewIngester("localhost", 1491, pswd)
+	ingester, err := sonic.NewIngester(
+		"localhost",
+		1491,
+		pswd,
+		sonic.OptionPoolMaxIdleConnections(16),
+		sonic.OptionPoolMinIdleConnections(1),
+		sonic.OptionPoolPingThreshold(time.Minute),
+	)
 	if err != nil {
 		panic(err)
 	}
