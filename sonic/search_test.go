@@ -58,6 +58,51 @@ func TestSearch(t *testing.T) {
 		}
 	})
 
+	t.Run("Query_quote", func(t *testing.T) {
+		t.Parallel()
+
+		_, err := srch.Query(col, bucket, `'quote' "hello"`, 1, 0, sonic.LangAutoDetect)
+		if err != nil {
+			t.Fatal("Query", err)
+		}
+	})
+
+	t.Run("Query_escape", func(t *testing.T) {
+		t.Parallel()
+
+		_, err := srch.Query(col, bucket, `escape symbol \`, 1, 0, sonic.LangAutoDetect)
+		if err != nil {
+			t.Fatal("Query", err)
+		}
+	})
+
+	t.Run("Query_tab", func(t *testing.T) {
+		t.Parallel()
+
+		_, err := srch.Query(col, bucket, "\t", 1, 0, sonic.LangAutoDetect)
+		if err != nil {
+			t.Fatal("Query", err)
+		}
+	})
+
+	t.Run("Query_space", func(t *testing.T) {
+		t.Parallel()
+
+		_, err := srch.Query(col, bucket, " ", 1, 0, sonic.LangAutoDetect)
+		if err == nil {
+			t.Fatal("Expected error, but got nil")
+		}
+	})
+
+	t.Run("Query_empty", func(t *testing.T) {
+		t.Parallel()
+
+		_, err := srch.Query(col, bucket, "", 1, 0, sonic.LangAutoDetect)
+		if err == nil {
+			t.Fatal("Expected error, but got nil")
+		}
+	})
+
 	t.Run("Query_empty", func(t *testing.T) {
 		t.Parallel()
 

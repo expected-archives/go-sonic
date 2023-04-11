@@ -65,7 +65,16 @@ func (s searchChannel) Query(collection, bucket, term string, limit, offset int,
 	}
 	defer d.close()
 
-	err = d.write(fmt.Sprintf("%s %s %s \"%s\" LIMIT(%d) OFFSET(%d)"+langFormat(lang), query, collection, bucket, term, limit, offset, lang))
+	err = d.write(fmt.Sprintf(
+		"%s %s %s %q LIMIT(%d) OFFSET(%d)"+langFormat(lang),
+		query,
+		collection,
+		bucket,
+		term,
+		limit,
+		offset,
+		lang,
+	))
 	if err != nil {
 		return nil, err
 	}
